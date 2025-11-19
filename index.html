@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>3rd Party Status Overview</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #111827;
+      --border: #1f2937;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --green: #10b981;
+      --gray: #4b5563;
+      --yellow: #facc15;
+      --red: #f97373;
+      --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background: radial-gradient(circle at top, #1e293b 0, #020617 55%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 800px;
+    }
+
+    h1 {
+      margin: 0 0 0.25rem;
+      font-size: 1.75rem;
+      letter-spacing: 0.03em;
+    }
+
+    .subtitle {
+      margin: 0 0 1.5rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+    }
+
+    .service-card {
+      background: linear-gradient(135deg, rgba(255,255,255,0.03), transparent);
+      border-radius: 0.9rem;
+      border: 1px solid var(--border);
+      padding: 0.9rem 1rem;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .service-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .service-name {
+      font-weight: 600;
+      font-size: 1rem;
+      white-space: nowrap;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.15rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      border: 1px solid transparent;
+    }
+
+    .status-pill--loading {
+      background: rgba(148, 163, 184, 0.1);
+      border-color: rgba(148, 163, 184, 0.4);
+      color: var(--muted);
+    }
+
+    .status-pill--ok {
+      background: rgba(16, 185, 129, 0.12);
+      border-color: rgba(16, 185, 129, 0.7);
+      color: var(--green);
+    }
+
+    .status-pill--unknown {
+      background: rgba(75, 85, 99, 0.18);
+      border-color: rgba(75, 85, 99, 0.8);
+      color: var(--muted);
+    }
+
+    .status-pill--issue {
+      background: rgba(234, 179, 8, 0.15);
+      border-color: rgba(234, 179, 8, 0.7);
+      color: var(--yellow);
+    }
+
+    .status-pill--critical {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: rgba(239, 68, 68, 0.8);
+      color: var(--red);
+    }
+
+    .status-description {
+      font-size: 0.8rem;
+      color: var(--muted);
+      min-height: 1.2em;
+    }
+
+    .status-link {
+      margin-top: 0.2rem;
+      font-size: 0.8rem;
+      text-decoration: none;
+      color: #38bdf8;
+    }
+
+    .status-link:hover {
+      text-decoration: underline;
+    }
+
+    .footer-note {
+      margin-top: 1rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Payment Provider Status</h1>
+      <p class="subtitle">
+        Green = overall service healthy. Gray = issues, maintenance, or unknown (including CORS/API problems).
+      </p>
+    </header>
+
+    <main class="grid" id="services-grid">
+      <!-- Cards will be injected by JS -->
+    </main>
+
+    <p class="footer-note">
+      Data is pulled from each provider's status page JSON where possible (Statuspage-style <code>/api/v2/status.json</code>).
+    </p>
+  </div>
+
+  <script>
+    // Config for the services we want to monitor
+    const services = [
+      {
+        id: "affirm",
+        name: "Affirm",
+        statusPageUrl: "https://status.affirm.com/",
+        apiUrl: "https://status.affirm.com/api/v2/status.json"
+      },
+      {
+        id: "afterpay",
+        name: "Afterpay",
+        statusPageUrl: "https://status.afterpay.com/",
+        apiUrl: "https://status.afterpay.com/api/v2/status.json"
+      },
+      {
+        id: "cybersource",
+        name: "Cybersource",
+        statusPageUrl: "https://status.cybersource.com/",
+        apiUrl: "https://status.cybersource.com/api/v2/status.json"
+      },
+      {
+        id: "paypal",
+        name: "PayPal (Production)",
+        statusPageUrl: "https://www.paypal-status.com/product/production",
+        apiUrl: "https://www.paypal-status.com/api/v2/status.json"
+      }
+    ];
+
+    const grid = document.getElementById("services-grid");
+
+    function createServiceCard(service) {
+      const card = document.createElement("article");
+      card.className = "service-card";
+      card.id = `service-${service.id}`;
+
+      card.innerHTML = `
+        <div class="service-header">
+          <span class="service-name">${service.name}</span>
+          <span class="status-pill status-pill--loading" data-role="pill">
+            Loading…
+          </span>
+        </div>
+        <div class="status-description" data-role="description"></div>
+        <a class="status-link" href="${service.statusPageUrl}" target="_blank" rel="noopener noreferrer">
+          View full status page →
+        </a>
+      `;
+
+      grid.appendChild(card);
+      return card;
+    }
+
+    function setPillState(card, state) {
+      const pill = card.querySelector('[data-role="pill"]');
+      const desc = card.querySelector('[data-role="description"]');
+
+      // Reset classes
+      pill.className = "status-pill";
+
+      switch (state.state) {
+        case "ok":
+          pill.classList.add("status-pill--ok");
+          pill.textContent = "Healthy";
+          break;
+        case "issue":
+          pill.classList.add("status-pill--issue");
+          pill.textContent = "Issues";
+          break;
+        case "critical":
+          pill.classList.add("status-pill--critical");
+          pill.textContent = "Major outage";
+          break;
+        case "unknown":
+        default:
+          pill.classList.add("status-pill--unknown");
+          pill.textContent = "Unknown";
+          break;
+      }
+
+      desc.textContent = state.description || "";
+    }
+
+    async function fetchStatus(service) {
+      const card = createServiceCard(service);
+
+      try {
+        const res = await fetch(service.apiUrl, { mode: "cors" });
+        if (!res.ok) {
+          throw new Error("HTTP " + res.status);
+        }
+
+        const data = await res.json();
+
+        // Atlassian Statuspage format: { status: { indicator, description } }
+        const status = data.status || {};
+        const indicator = (status.indicator || "").toLowerCase();
+        const description = status.description || "Statuspage response received.";
+
+        let state = { state: "unknown", description };
+
+        if (indicator === "none") {
+          // All systems operational → green
+          state.state = "ok";
+        } else if (indicator === "minor" || indicator === "maintenance") {
+          state.state = "issue";
+        } else if (indicator === "major" || indicator === "critical") {
+          state.state = "critical";
+        } else {
+          state.state = "unknown";
+        }
+
+        setPillState(card, state);
+      } catch (err) {
+        // On any error (including CORS), show gray/unknown
+        setPillState(card, {
+          state: "unknown",
+          description: "Could not determine status (API/CORS error). Check the status page directly."
+        });
+        // Optional: log to console for debugging
+        console.warn("Failed to fetch status for", service.name, err);
+      }
+    }
+
+    (function init() {
+      services.forEach(fetchStatus);
+    })();
+  </script>
+</body>
+</html>
