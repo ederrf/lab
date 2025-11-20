@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>3rd Party Status Overview</title>
+  <title>3rd-Party Payment Status Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
-      --bg: #0f172a;
-      --card-bg: #111827;
+      --bg: #020617;
+      --card-bg: #020617;
       --border: #1f2937;
       --text: #e5e7eb;
       --muted: #9ca3af;
@@ -18,9 +18,7 @@
       --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -36,7 +34,7 @@
 
     .app {
       width: 100%;
-      max-width: 800px;
+      max-width: 900px;
     }
 
     h1 {
@@ -53,12 +51,12 @@
 
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
       gap: 1rem;
     }
 
     .service-card {
-      background: linear-gradient(135deg, rgba(255,255,255,0.03), transparent);
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.03), transparent);
       border-radius: 0.9rem;
       border: 1px solid var(--border);
       padding: 0.9rem 1rem;
@@ -153,45 +151,63 @@
     <header>
       <h1>Payment Provider Status</h1>
       <p class="subtitle">
-        Green = overall service healthy. Gray = issues, maintenance, or unknown (including CORS/API problems).
+        Green = overall service healthy. Gray = issues/maintenance/unknown (or non-JSON status pages).
       </p>
     </header>
 
     <main class="grid" id="services-grid">
-      <!-- Cards will be injected by JS -->
+      <!-- Cards injected via JS -->
     </main>
 
     <p class="footer-note">
-      Data is pulled from each provider's status page JSON where possible (Statuspage-style <code>/api/v2/status.json</code>).
+      Data is fetched via a Cloudflare Worker proxy that reads each provider's status page (Statuspage <code>/api/v2/status.json</code> where available).
     </p>
   </div>
 
   <script>
-    // Config for the services we want to monitor
+    // 🔴 TODO: replace with your real Worker base URL (no trailing slash)
+    const WORKER_BASE_URL = "https://your-worker-subdomain.workers.dev";
+
     const services = [
       {
         id: "affirm",
         name: "Affirm",
-        statusPageUrl: "https://status.affirm.com/",
-        apiUrl: "https://status.affirm.com/api/v2/status.json"
+        statusPageUrl: "https://status.affirm.com/"
       },
       {
         id: "afterpay",
         name: "Afterpay",
-        statusPageUrl: "https://status.afterpay.com/",
-        apiUrl: "https://status.afterpay.com/api/v2/status.json"
+        statusPageUrl: "https://status.afterpay.com/"
       },
       {
         id: "cybersource",
         name: "Cybersource",
-        statusPageUrl: "https://status.cybersource.com/",
-        apiUrl: "https://status.cybersource.com/api/v2/status.json"
+        statusPageUrl: "https://status.cybersource.com/"
       },
       {
         id: "paypal",
         name: "PayPal (Production)",
-        statusPageUrl: "https://www.paypal-status.com/product/production",
-        apiUrl: "https://www.paypal-status.com/api/v2/status.json"
+        statusPageUrl: "https://www.paypal-status.com/product/production"
+      },
+      {
+        id: "klarna",
+        name: "Klarna",
+        statusPageUrl: "https://status.klarna.com/"
+      },
+      {
+        id: "stripe",
+        name: "Stripe",
+        statusPageUrl: "https://status.stripe.com/"
+      },
+      {
+        id: "paysafe",
+        name: "Paysafe",
+        statusPageUrl: "https://status.paysafe.com/"
+      },
+      {
+        id: "fiserv",
+        name: "Fiserv Client Alerts",
+        statusPageUrl: "https://merchants.fiserv.com/en-us/customer-center/client-alerts/"
       }
     ];
 
@@ -222,8 +238,6 @@
     function setPillState(card, state) {
       const pill = card.querySelector('[data-role="pill"]');
       const desc = card.querySelector('[data-role="description"]');
-
-      // Reset classes
       pill.className = "status-pill";
 
       switch (state.state) {
@@ -251,41 +265,57 @@
 
     async function fetchStatus(service) {
       const card = createServiceCard(service);
+      const url = `${WORKER_BASE_URL}/status/${encodeURIComponent(service.id)}`;
 
       try {
-        const res = await fetch(service.apiUrl, { mode: "cors" });
+        const res = await fetch(url);
         if (!res.ok) {
           throw new Error("HTTP " + res.status);
         }
 
-        const data = await res.json();
+        const contentType = res.headers.get("content-type") || "";
 
-        // Atlassian Statuspage format: { status: { indicator, description } }
-        const status = data.status || {};
-        const indicator = (status.indicator || "").toLowerCase();
-        const description = status.description || "Statuspage response received.";
+        if (contentType.includes("application/json")) {
+          const data = await res.json();
 
-        let state = { state: "unknown", description };
+          // Try Atlassian Statuspage format: { status: { indicator, description } }
+          if (data && data.status && typeof data.status.indicator === "string") {
+            const indicator = data.status.indicator.toLowerCase();
+            const description = data.status.description || "";
 
-        if (indicator === "none") {
-          // All systems operational → green
-          state.state = "ok";
-        } else if (indicator === "minor" || indicator === "maintenance") {
-          state.state = "issue";
-        } else if (indicator === "major" || indicator === "critical") {
-          state.state = "critical";
+            let state = { state: "unknown", description };
+
+            if (indicator === "none") {
+              state.state = "ok";
+            } else if (indicator === "minor" || indicator === "maintenance") {
+              state.state = "issue";
+            } else if (indicator === "major" || indicator === "critical") {
+              state.state = "critical";
+            } else {
+              state.state = "unknown";
+            }
+
+            setPillState(card, state);
+          } else {
+            // JSON but not Statuspage shape – mark unknown, show something generic
+            setPillState(card, {
+              state: "unknown",
+              description: "Non-standard JSON status format. See status page for details."
+            });
+          }
         } else {
-          state.state = "unknown";
+          // HTML or other – e.g. Fiserv client alerts
+          const text = await res.text();
+          setPillState(card, {
+            state: "unknown",
+            description: "Non-JSON status page (likely HTML alerts). Open status page for details."
+          });
         }
-
-        setPillState(card, state);
       } catch (err) {
-        // On any error (including CORS), show gray/unknown
         setPillState(card, {
           state: "unknown",
-          description: "Could not determine status (API/CORS error). Check the status page directly."
+          description: "Could not determine status (proxy/API error). Check the status page directly."
         });
-        // Optional: log to console for debugging
         console.warn("Failed to fetch status for", service.name, err);
       }
     }
